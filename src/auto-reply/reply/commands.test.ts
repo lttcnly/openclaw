@@ -859,7 +859,6 @@ describe("/approve command", () => {
     expect(result.reply?.text).toContain("fresh approval prompt");
   });
 
-  it("rejects gateway clients without approvals scope", async () => {
   it("accepts bare approve text for Slack-style manual approvals", async () => {
     const cfg = {
       commands: { text: true },

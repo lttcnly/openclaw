@@ -122,7 +122,7 @@ function isApprovalNotFoundError(err: unknown): boolean {
   }
 
   // Legacy server/client combinations may only include the message text.
-  return /unknown or expired approval id/i.test(err.message);
+  return /unknown (?:or expired )?approval id|approval expired or not found/i.test(err.message);
 }
 
 function formatApprovalSubmitError(error: unknown): string {
@@ -130,6 +130,13 @@ function formatApprovalSubmitError(error: unknown): string {
 }
 
 type ApprovalMethod = "exec.approval.resolve" | "plugin.approval.resolve";
+
+function canUseExecApprovalRecoveryHint(params: {
+  methods: ApprovalMethod[];
+  channel: string;
+}): boolean {
+  return params.channel !== "telegram" && params.methods.includes("exec.approval.resolve");
+}
 
 function resolveApprovalMethods(params: {
   approvalId: string;
@@ -257,6 +264,10 @@ export const handleApproveCommand: CommandHandler = async (params, allowTextComm
     };
   }
 
+  const useRecoveryHint = canUseExecApprovalRecoveryHint({
+    methods,
+    channel: params.command.channel,
+  });
   let lastError: unknown = null;
   for (const [index, method] of methods.entries()) {
     try {
@@ -275,7 +286,11 @@ export const handleApproveCommand: CommandHandler = async (params, allowTextComm
       if (isLastMethod) {
         return {
           shouldContinue: false,
-          reply: { text: formatStaleApprovalResolveError(parsed.id) },
+          reply: {
+            text: useRecoveryHint
+              ? formatStaleApprovalResolveError(parsed.id)
+              : `❌ Failed to submit approval: ${formatApprovalSubmitError(error)}`,
+          },
         };
       }
     }
@@ -285,9 +300,10 @@ export const handleApproveCommand: CommandHandler = async (params, allowTextComm
     return {
       shouldContinue: false,
       reply: {
-        text: isApprovalNotFoundError(lastError)
-          ? formatStaleApprovalResolveError(parsed.id)
-          : `❌ Failed to submit approval: ${formatApprovalSubmitError(lastError)}`,
+        text:
+          isApprovalNotFoundError(lastError) && useRecoveryHint
+            ? formatStaleApprovalResolveError(parsed.id)
+            : `❌ Failed to submit approval: ${formatApprovalSubmitError(lastError)}`,
       },
     };
   }
