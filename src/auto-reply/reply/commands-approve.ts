@@ -33,6 +33,10 @@ type ParsedApproveCommand =
 const APPROVE_USAGE_TEXT =
   "Usage: /approve <id> <decision> (see the pending approval message for available decisions)";
 
+function formatStaleApprovalResolveError(approvalId: string): string {
+  return `❌ Approval ${approvalId} is no longer pending. It may have expired or already been resolved. Ask OpenClaw for a fresh approval prompt, then retry with the newest ID.`;
+}
+
 function parseApproveCommand(raw: string): ParsedApproveCommand | null {
   const trimmed = raw.trim();
   if (FOREIGN_COMMAND_MENTION_REGEX.test(trimmed)) {
@@ -262,10 +266,16 @@ export const handleApproveCommand: CommandHandler = async (params, allowTextComm
     } catch (error) {
       lastError = error;
       const isLastMethod = index === methods.length - 1;
-      if (!isApprovalNotFoundError(error) || isLastMethod) {
+      if (!isApprovalNotFoundError(error)) {
         return {
           shouldContinue: false,
           reply: { text: `❌ Failed to submit approval: ${formatApprovalSubmitError(error)}` },
+        };
+      }
+      if (isLastMethod) {
+        return {
+          shouldContinue: false,
+          reply: { text: formatStaleApprovalResolveError(parsed.id) },
         };
       }
     }
@@ -274,7 +284,11 @@ export const handleApproveCommand: CommandHandler = async (params, allowTextComm
   if (lastError) {
     return {
       shouldContinue: false,
-      reply: { text: `❌ Failed to submit approval: ${formatApprovalSubmitError(lastError)}` },
+      reply: {
+        text: isApprovalNotFoundError(lastError)
+          ? formatStaleApprovalResolveError(parsed.id)
+          : `❌ Failed to submit approval: ${formatApprovalSubmitError(lastError)}`,
+      },
     };
   }
 
